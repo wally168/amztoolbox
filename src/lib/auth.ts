@@ -75,6 +75,18 @@ export async function authenticate(username: string, password: string) {
   const defaultPass = process.env.ADMIN_PASSWORD || 'dage168'
 
   if (username === defaultUser && password === defaultPass) {
+    // Try to ensure this user exists in DB for persistence
+    try {
+      const { hash, salt } = hashPassword(defaultPass)
+      const dbUser = await db.adminUser.upsert({
+        where: { username: defaultUser },
+        update: {}, // Don't update password if exists, just get ID
+        create: { username: defaultUser, passwordHash: hash, passwordSalt: salt }
+      })
+      return dbUser
+    } catch {
+      // DB failed, fallback to memory user (will fail on Vercel/Serverless)
+    }
     return { id: 'default-admin', username: defaultUser, passwordHash: '', passwordSalt: '' } as any
   }
   return null
