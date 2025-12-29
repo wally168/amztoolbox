@@ -92,7 +92,15 @@ export default async function Page({ searchParams }: { searchParams?: Record<str
   }
 
   let categories = categoriesRows
-  if (!categories || categories.length === 0) {
+  try {
+    const ensureCategories = (arr: any[]) => {
+      const keys = new Set(arr.map((x: any) => x.key))
+      const merged = arr.slice()
+      for (const d of DEFAULT_CATEGORIES) if (!keys.has(d.key)) merged.push(d)
+      return merged.sort((a, b) => (a.order || 0) - (b.order || 0))
+    }
+    categories = ensureCategories(Array.isArray(categories) ? categories : [])
+  } catch {
     categories = DEFAULT_CATEGORIES
   }
 

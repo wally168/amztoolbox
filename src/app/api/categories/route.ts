@@ -1,32 +1,33 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-
-const defaultCategories = [
-  { key: 'operation', label: '运营工具', order: 1 },
-  { key: 'advertising', label: '广告工具', order: 2 },
-  { key: 'image-text', label: '图片文本', order: 3 },
-  { key: 'other', label: '其他', order: 99 }
-]
+import { DEFAULT_CATEGORIES } from '@/lib/constants'
 
 export async function GET() {
   try {
     let rows = await (db as any).toolCategory.findMany({ orderBy: { order: 'asc' } })
     if (rows.length === 0) {
       // Seed defaults if empty
-      for (const d of defaultCategories) {
-        await (db as any).toolCategory.upsert({
-          where: { key: d.key },
-          update: d,
-          create: d
-        })
+      for (const d of DEFAULT_CATEGORIES) {
+        try {
+          await (db as any).toolCategory.upsert({
+            where: { key: d.key },
+            update: d,
+            create: d
+          })
+        } catch (e) { console.error('Failed to upsert category:', d.key, e) }
       }
       rows = await (db as any).toolCategory.findMany({ orderBy: { order: 'asc' } })
     }
+    
+    if (rows.length === 0) {
+      return NextResponse.json(DEFAULT_CATEGORIES)
+    }
+
     return NextResponse.json(rows)
   } catch (e) {
     // Fallback if DB fails or table missing
     console.error(e)
-    return NextResponse.json(defaultCategories)
+    return NextResponse.json(DEFAULT_CATEGORIES)
   }
 }
 
