@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { SESSION_COOKIE, getSessionByToken, hashPassword, verifyPassword, ensureDefaultAdmin, getFileAdmin, setFileAdmin } from '@/lib/auth'
+import { SESSION_COOKIE, getSessionByToken, hashPassword, verifyPassword, ensureDefaultAdmin } from '@/lib/auth'
 
 export async function POST(request: Request) {
   try {
@@ -23,19 +23,9 @@ export async function POST(request: Request) {
     if (!user) {
       try { await ensureDefaultAdmin(); user = await db.adminUser.findFirst() } catch {}
     }
+    
     if (!user) {
-      const fileAdmin = getFileAdmin()
-      if (fileAdmin && (!session?.user?.username || session.user.username === fileAdmin.username)) {
-        let ok = false
-        try { ok = verifyPassword(currentPassword, fileAdmin.passwordHash, fileAdmin.passwordSalt) } catch { return NextResponse.json({ error: '数据库不可用或密码校验失败' }, { status: 500 }) }
-        if (!ok) return NextResponse.json({ error: '当前密码不正确' }, { status: 401 })
-        const { hash, salt } = hashPassword(newPassword)
-        try { setFileAdmin({ username: fileAdmin.username, passwordHash: hash, passwordSalt: salt }) } catch { return NextResponse.json({ error: '文件存储不可用，修改失败' }, { status: 500 }) }
-        const res = NextResponse.json({ success: true })
-        res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', expires: new Date(0) })
-        return res
-      }
-      return NextResponse.json({ error: '用户不存在' }, { status: 404 })
+      return NextResponse.json({ error: '用户不存在或数据库不可用' }, { status: 404 })
     }
 
     let ok = false
@@ -49,7 +39,8 @@ export async function POST(request: Request) {
     const res = NextResponse.json({ success: true })
     res.cookies.set(SESSION_COOKIE, '', { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', expires: new Date(0) })
     return res
-  } catch {
+  } catch (e) {
+    console.error('Change password error:', e)
     return NextResponse.json({ error: '修改密码失败' }, { status: 500 })
   }
 }
