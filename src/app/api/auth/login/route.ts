@@ -12,7 +12,8 @@ export async function POST(request: Request) {
     const res = NextResponse.json({ ok: true })
     res.cookies.set(SESSION_COOKIE, token, buildCookieOptions(expiresAt))
     return res
-  } catch {
-    return NextResponse.json({ error: '登录失败' }, { status: 500 })
+  } catch (e: any) {
+    console.error('Login Error:', e)
+    return NextResponse.json({ error: '登录失败: ' + (e.message || String(e)) }, { status: 500 })
   }
 }
