@@ -84,8 +84,12 @@ export async function authenticate(username: string, password: string) {
         create: { username: defaultUser, passwordHash: hash, passwordSalt: salt }
       })
       return dbUser
-    } catch {
-      // DB failed, fallback to memory user (will fail on Vercel/Serverless)
+    } catch (e) {
+      // In production/serverless, memory fallback is useless.
+      // We must fail if DB is unreachable to prevent fake login sessions.
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('Database authentication failed: ' + String(e))
+      }
     }
     return { id: 'default-admin', username: defaultUser, passwordHash: '', passwordSalt: '' } as any
   }
@@ -95,7 +99,14 @@ export async function authenticate(username: string, password: string) {
 export async function createSession(userId: string, username: string) {
   const token = crypto.randomUUID()
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
-  try { await db.session.create({ data: { token, userId, expiresAt } }) } catch {}
+  try { 
+    await db.session.create({ data: { token, userId, expiresAt } }) 
+  } catch (e) {
+    if (process.env.NODE_ENV === 'production') {
+      // If we cannot persist session in DB, login is invalid in serverless
+      throw new Error('Failed to persist session: ' + String(e))
+    }
+  }
   memSessions.set(token, { userId, username, expiresAt })
   return { token, expiresAt }
 }
