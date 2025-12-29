@@ -58,55 +58,62 @@ export async function ensureDefaultAdmin() {
 }
 
 export async function authenticate(username: string, password: string) {
+  // First, try to find user in DB
   try {
     const user = await db.adminUser.findUnique({ where: { username } })
     if (user) {
       const ok = verifyPassword(password, user.passwordHash, user.passwordSalt)
       return ok ? user : null
     }
-  } catch {}
-  const fileAdmin = readFileAdmin()
-  if (fileAdmin && username === fileAdmin.username) {
-    const ok = verifyPassword(password, fileAdmin.passwordHash, fileAdmin.passwordSalt)
-    if (ok) return { id: 'file-user', username: fileAdmin.username, passwordHash: fileAdmin.passwordHash, passwordSalt: fileAdmin.passwordSalt } as any
-    return null
+  } catch (e) {
+    console.error('DB Auth Error:', e)
+    // Continue to check default admin if DB fails or user not found
   }
+
+  // Check default admin credentials
   const defaultUser = process.env.ADMIN_USERNAME || 'dage666'
   const defaultPass = process.env.ADMIN_PASSWORD || 'dage168'
 
   if (username === defaultUser && password === defaultPass) {
-    // Try to ensure this user exists in DB for persistence
+    // If DB is reachable, we MUST sync this default user to DB to support sessions
     try {
       const { hash, salt } = hashPassword(defaultPass)
       const dbUser = await db.adminUser.upsert({
         where: { username: defaultUser },
-        update: {}, // Don't update password if exists, just get ID
+        update: {}, // Don't update password if it exists
         create: { username: defaultUser, passwordHash: hash, passwordSalt: salt }
       })
       return dbUser
     } catch (e) {
-      // In production/serverless, memory fallback is useless.
-      // We must fail if DB is unreachable to prevent fake login sessions.
+      console.error('DB Upsert Error:', e)
+      // If we are in production and DB fails, we should fail hard because memory sessions won't work
       if (process.env.NODE_ENV === 'production') {
-        throw new Error('Database authentication failed: ' + String(e))
+        throw new Error('Database unreachable in production. Cannot persist session.')
       }
     }
+    // Fallback for local dev only
     return { id: 'default-admin', username: defaultUser, passwordHash: '', passwordSalt: '' } as any
   }
+  
   return null
 }
 
 export async function createSession(userId: string, username: string) {
   const token = crypto.randomUUID()
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+  
+  // Always try to persist session to DB
   try { 
     await db.session.create({ data: { token, userId, expiresAt } }) 
   } catch (e) {
+    console.error('Session Persistence Error:', e)
     if (process.env.NODE_ENV === 'production') {
       // If we cannot persist session in DB, login is invalid in serverless
       throw new Error('Failed to persist session: ' + String(e))
     }
   }
+  
+  // Keep memory session for local dev or fallback
   memSessions.set(token, { userId, username, expiresAt })
   return { token, expiresAt }
 }
